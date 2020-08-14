@@ -17,8 +17,8 @@ placeId -- The place that the players will be teleported to
 local teleportService = game:GetService("TeleportService")
 
 local function teleportQueue(queue,placeId)
-	local server = teleportService:ReserveServer(placeId)
 	local success = pcall(function()
+		local server = teleportService:ReserveServer(placeId)
 		teleportService:TeleportToPrivateServer(placeId,server,queue)
 	end)
 	if success then
@@ -74,7 +74,12 @@ methods.UnbindFromCount = function(self,bindName)
 end
 
 methods.Teleport = function(self)
-	teleportQueue(self.queued,self.placeId)
+	if self.placeId then
+		local success = teleportQueue(self.queued,self.placeId)
+		if not success then
+			warn("Players could not be teleported")
+		end
+	end
 end
 
 methods.Cancel = function(self)
@@ -126,16 +131,28 @@ QueueService.Create = function(self,maxPlayers,minStart,countTime,placeId)
 		queued = {},
 	}
 	
+	local function onLeave(plr)
+		local index = table.find(object.queued,plr)
+		if index then
+			PlayerRemoved:Fire(plr)
+			table.remove(object.queued,index)
+		end
+	end
+	
+	local leaveConnection = game.Players.PlayerRemoving:Connect(onLeave)
+	
 	spawn(function()
 		while true do
 			if ticking then
-				for i = 1,countTime do
-					wait(1)
-					if not ticking or object.cancelled then
-						ticking = false
-						break
+				if #object.queued < maxPlayers then
+					for i = 1,countTime do
+						wait(1)
+						if not ticking or object.cancelled then
+							ticking = false
+							break
+						end
+						CountTick:Fire(i)
 					end
-					CountTick:Fire(i)
 				end
 				if not ticking then
 					TickStopped:Fire()
@@ -177,6 +194,7 @@ QueueService.Create = function(self,maxPlayers,minStart,countTime,placeId)
 	setmetatable(canDestroy,{
 		__index = function()
 			if rawget(canDestroy,1) == true and rawget(canDestroy,2) == true then
+				leaveConnection:Disconnect()
 				object = nil
 			end
 		end
